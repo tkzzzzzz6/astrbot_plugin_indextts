@@ -5,6 +5,12 @@
     "hint": "例如 http://127.0.0.1:7860/；Docker 访问宿主机时可改为 http://host.docker.internal:7860/",
     "default": "http://127.0.0.1:7860/"
   },
+  "lang_choice": {
+    "type": "string",
+    "description": "合成语言",
+    "hint": "默认 ZH（中文）；仅在服务提供 lang_choice 参数时使用，其他代码以服务 API 为准。",
+    "default": "ZH"
+  },
   "default_reference_audio": {
     "type": "string",
     "description": "默认参考音频路径",
@@ -37,16 +43,19 @@
   "infer_mode": {
     "type": "string",
     "description": "IndexTTS 推理模式",
+    "hint": "仅对提供 infer_mode 的旧版接口生效。",
     "default": "批次推理"
   },
   "max_text_tokens_per_sentence": {
     "type": "int",
     "description": "单句最大文本 token 数",
+    "hint": "新版接口会自动映射为 max_text_tokens_per_segment，无需重填旧配置。",
     "default": 120
   },
   "sentences_bucket_max_size": {
     "type": "int",
     "description": "批次推理时的分桶大小",
+    "hint": "仅对提供 sentences_bucket_max_size 的旧版接口生效。",
     "default": 4
   },
   "do_sample": {

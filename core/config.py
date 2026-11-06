@@ -12,6 +12,7 @@ from astrbot.api import logger
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "index_tts_url": "http://127.0.0.1:7860/",
+    "lang_choice": "ZH",
     "default_reference_audio": "",
     "auto_capture_voice": False,
     "auto_tts_enabled": True,

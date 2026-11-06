@@ -71,6 +71,9 @@ class IndexTTSPlugin(Star):
 
     def _client_params(self) -> dict[str, object]:
         return {
+            "lang_choice": str(
+                self.config.get("lang_choice", DEFAULT_CONFIG["lang_choice"]),
+            ).strip().upper(),
             "infer_mode": str(
                 self.config.get("infer_mode", DEFAULT_CONFIG["infer_mode"]),
             ),
@@ -82,35 +85,35 @@ class IndexTTSPlugin(Star):
                 self.config.get("sentences_bucket_max_size"),
                 int(DEFAULT_CONFIG["sentences_bucket_max_size"]),
             ),
-            "param_5": as_bool(
+            "do_sample": as_bool(
                 self.config.get("do_sample"),
                 bool(DEFAULT_CONFIG["do_sample"]),
             ),
-            "param_6": as_float(
+            "top_p": as_float(
                 self.config.get("top_p"),
                 float(DEFAULT_CONFIG["top_p"]),
             ),
-            "param_7": as_int(
+            "top_k": as_int(
                 self.config.get("top_k"),
                 int(DEFAULT_CONFIG["top_k"]),
             ),
-            "param_8": as_float(
+            "temperature": as_float(
                 self.config.get("temperature"),
                 float(DEFAULT_CONFIG["temperature"]),
             ),
-            "param_9": as_float(
+            "length_penalty": as_float(
                 self.config.get("length_penalty"),
                 float(DEFAULT_CONFIG["length_penalty"]),
             ),
-            "param_10": as_int(
+            "num_beams": as_int(
                 self.config.get("num_beams"),
                 int(DEFAULT_CONFIG["num_beams"]),
             ),
-            "param_11": as_float(
+            "repetition_penalty": as_float(
                 self.config.get("repetition_penalty"),
                 float(DEFAULT_CONFIG["repetition_penalty"]),
             ),
-            "param_12": as_int(
+            "max_mel_tokens": as_int(
                 self.config.get("max_mel_tokens"),
                 int(DEFAULT_CONFIG["max_mel_tokens"]),
             ),
@@ -235,11 +238,11 @@ class IndexTTSPlugin(Star):
         try:
             output_path = await self.tts_client.generate(text, reference)
         except TTSServiceUnavailable:
-            logger.warning("IndexTTS 服务不可用")
+            logger.exception("IndexTTS 服务连接或接口初始化失败")
             yield event.plain_result("❌ IndexTTS 服务不可用，请检查服务地址和运行状态")
             return
-        except TTSError as exc:
-            logger.warning("IndexTTS 生成失败: %s", type(exc).__name__)
+        except TTSError:
+            logger.exception("IndexTTS 生成失败")
             yield event.plain_result("❌ TTS 生成失败，请稍后重试或查看日志")
             return
         except Exception:
@@ -371,6 +374,7 @@ class IndexTTSPlugin(Star):
             f"  服务状态: {'✅ 已连接' if self.tts_client.is_connected else '❌ 未连接'}",
             f"  音色状态: {voice_status}",
             f"  推理模式: {self.config.get('infer_mode', 'N/A')}",
+            f"  合成语言（支持语言选择的接口）: {self.config.get('lang_choice', 'ZH')}",
             f"  temperature: {self.config.get('temperature', 1.0)}",
             f"  top_p: {self.config.get('top_p', 0.8)}",
             f"  top_k: {self.config.get('top_k', 30)}",
@@ -478,10 +482,10 @@ class IndexTTSPlugin(Star):
         try:
             output_path = await self.tts_client.generate(text, reference)
         except TTSServiceUnavailable:
-            logger.debug("自动 TTS 跳过：服务暂不可用")
+            logger.warning("自动 TTS 跳过：服务连接或接口初始化失败", exc_info=True)
             return
         except TTSError:
-            logger.warning("自动 TTS 生成失败")
+            logger.exception("自动 TTS 生成失败")
             return
         except Exception:
             logger.exception("自动 TTS 未预期异常")

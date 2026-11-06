@@ -15,6 +15,7 @@ import httpx
 from astrbot.api import logger
 from gradio_client import Client, handle_file
 
+from .api import GenSingleAPI
 from .audio import MAX_AUDIO_BYTES, looks_like_audio, new_output_path
 
 DEFAULT_TTS_TIMEOUT = 180.0
@@ -52,6 +53,7 @@ class IndexTTSClient:
         self._timeout = timeout
         self._retry_cooldown = retry_cooldown
         self._client: Client | None = None
+        self._api: GenSingleAPI | None = None
         self._lock = asyncio.Lock()
         self._semaphore = asyncio.Semaphore(1)
         self._next_retry_at = 0.0
@@ -130,10 +132,15 @@ class IndexTTSClient:
 
         client = Client(url, verbose=False)
         try:
-            info = client.view_api(return_format="dict")
+            info = client.view_api(return_format="dict", print_info=False)
             endpoints = info.get("named_endpoints", {}) if isinstance(info, dict) else {}
             if "/gen_single" not in endpoints:
                 raise TTSError("IndexTTS 服务缺少 /gen_single 接口")
+            self._api = GenSingleAPI(endpoints["/gen_single"])
+            logger.info(
+                "IndexTTS /gen_single 接口适配完成，参数: %s",
+                ", ".join(self._api.mapping),
+            )
             return client
         except Exception:
             try:
@@ -179,7 +186,10 @@ class IndexTTSClient:
 
             source = self._result_path(result)
             if source is None or not source.is_file():
-                raise TTSError("IndexTTS 未返回有效音频")
+                raise TTSError(
+                    "IndexTTS 未返回可在 AstrBot 本机读取的音频；"
+                    "请检查 Gradio 文件下载及服务端返回格式",
+                )
             if not looks_like_audio(source):
                 raise TTSError("IndexTTS 返回的文件不是有效音频")
 
@@ -193,10 +203,8 @@ class IndexTTSClient:
                 raise TTSError("保存生成的音频失败") from exc
             finally:
                 temp_path.unlink(missing_ok=True)
-                try:
-                    source.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                # The returned path belongs to Gradio (or a shared filesystem),
+                # not this plugin. Do not delete it, especially after a failed copy.
 
             try:
                 os.chmod(output_path, 0o600)
@@ -210,29 +218,31 @@ class IndexTTSClient:
         text: str,
         reference_audio: Path,
     ) -> Any:
-        return client.predict(
-            prompt=handle_file(str(reference_audio)),
-            text=text,
-            **self._params,
-            api_name="/gen_single",
+        if self._api is None:
+            raise TTSError("IndexTTS 接口尚未初始化")
+        kwargs = self._api.build_kwargs(
+            self._params,
+            text,
+            handle_file(str(reference_audio)),
         )
+        return client.predict(**kwargs, api_name="/gen_single")
 
     @staticmethod
     def _result_path(result: Any) -> Path | None:
-        if isinstance(result, str | os.PathLike):
-            value: Any = result
-        elif isinstance(result, dict):
-            value = result.get("value")
-        elif isinstance(result, tuple | list) and result:
-            value = result[0]
-        else:
-            return None
+        """Unwrap Audio updates/FileData, including nested first outputs."""
 
-        if isinstance(value, dict):
-            value = value.get("value") or value.get("path") or value.get("name")
-        if not value:
-            return None
-        try:
-            return Path(value)
-        except TypeError:
-            return None
+        if isinstance(result, str | os.PathLike):
+            if not str(result).strip() or str(result).lower().startswith(("http://", "https://")):
+                return None
+            try:
+                return Path(result)
+            except (TypeError, ValueError):
+                return None
+        if isinstance(result, dict):
+            for key in ("value", "path", "name"):
+                path = IndexTTSClient._result_path(result.get(key))
+                if path is not None:
+                    return path
+        if isinstance(result, tuple | list) and result:
+            return IndexTTSClient._result_path(result[0])
+        return None
